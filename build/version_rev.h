@@ -1,0 +1,3 @@
+#ifndef NO_VERSION_REV_NEEDED
+#define NO_VERSION_REV_NEEDED
+#endif
