@@ -116,6 +116,9 @@
     <ProjectReference Include="..\..\..\Subtitles\Subtitles.vcxproj">
       <Project>{5e56335f-0fb1-4eea-b240-d8dc5e0608e4}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\thirdparty\lpng1628\projects\visualc71\libpng.vcxproj">
+      <Project>{14489918-9760-45cf-88db-dce4e25f6522}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\thirdparty\unrar\unrar.vcxproj">
       <Project>{da8461c4-7683-4360-9372-2a9e0f1795c2}</Project>
     </ProjectReference>

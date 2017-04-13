@@ -463,9 +463,17 @@ namespace Plugin
 
         struct FilterDefinition filterDef_textsub = {
             nullptr, nullptr, nullptr,              // next, prev, module
-            "TextSub",                              // name
+#ifdef _VSMOD
+            "TextSubMod",			// name
+#else
+            "TextSub",				// name
+#endif
             "Adds subtitles from srt, sub, psb, smi, ssa, ass file formats.", // desc
-            "MPC-HC",                               // maker
+#ifdef _VSMOD
+            "Teplofizik",			// maker
+#else
+            "MPC-HC",				// maker
+#endif
             nullptr,                                // private_data
             sizeof(CVirtualDubFilter**),            // inst_data_size
             textsubInitProc,                        // initProc
@@ -734,7 +742,11 @@ namespace Plugin
 
         struct VDXFilterDefinition filterDef_textsub = {
             nullptr, nullptr, nullptr,              // next, prev, module
-            "TextSub",                              // name
+#ifdef _VSMOD
+            "TextSubMod",			// name
+#else
+            "TextSub",				// name
+#endif
             "Adds subtitles from srt, sub, psb, smi, ssa, ass file formats.", // desc
             "MPC-HC",                               // maker
             nullptr,                                // private_data
@@ -836,7 +848,11 @@ namespace Plugin
                 : CTextSubFilter(CString(fn), CharSet, fps)
                 , CAvisynthFilter(c, env) {
                 if (!m_pSubPicProvider) {
+#ifdef _VSMOD
+                    env->ThrowError("TextSubMod: Can't open \"%s\"", fn);
+#else
                     env->ThrowError("TextSub: Can't open \"%s\"", fn);
+#endif
                 }
             }
         };
@@ -882,10 +898,17 @@ namespace Plugin
         extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit(IScriptEnvironment* env)
         {
             env->AddFunction("VobSub", "cs", VobSubCreateS, 0);
+#ifdef _VSMOD
+            env->AddFunction("TextSubMod", "cs", TextSubCreateS, 0);
+            env->AddFunction("TextSubMod", "csi", TextSubCreateSI, 0);
+            env->AddFunction("TextSubMod", "csif", TextSubCreateSIF, 0);
+            env->AddFunction("MaskSubMod", "siifi", MaskSubCreateSIIFI, 0);
+#else
             env->AddFunction("TextSub", "cs", TextSubCreateS, 0);
             env->AddFunction("TextSub", "csi", TextSubCreateSI, 0);
             env->AddFunction("TextSub", "csif", TextSubCreateSIF, 0);
             env->AddFunction("MaskSub", "siifi", MaskSubCreateSIIFI, 0);
+#endif
             env->SetVar(env->SaveString("RGBA"), false);
             return nullptr;
         }
@@ -966,7 +989,11 @@ namespace Plugin
                 : CTextSubFilter(CString(fn), CharSet, fps)
                 , CAvisynthFilter(c, env, vfr) {
                 if (!m_pSubPicProvider) {
+#ifdef _VSMOD
+                    env->ThrowError("TextSubMod: Can't open \"%s\"", fn);
+#else
                     env->ThrowError("TextSub: Can't open \"%s\"", fn);
+#endif
                 }
             }
         };
@@ -974,7 +1001,11 @@ namespace Plugin
         AVSValue __cdecl TextSubCreateGeneral(AVSValue args, void* user_data, IScriptEnvironment* env)
         {
             if (!args[1].Defined()) {
+#ifdef _VSMOD
+                env->ThrowError("TextSubMod: You must specify a subtitle file to use");
+#else
                 env->ThrowError("TextSub: You must specify a subtitle file to use");
+#endif
             }
             VFRTranslator* vfr = 0;
             if (args[4].Defined()) {
@@ -999,10 +1030,18 @@ namespace Plugin
         AVSValue __cdecl MaskSubCreate(AVSValue args, void* user_data, IScriptEnvironment* env)/*SIIFI*/
         {
             if (!args[0].Defined()) {
+#ifdef _VSMOD
+                env->ThrowError("MaskSubMod: You must specify a subtitle file to use");
+#else
                 env->ThrowError("MaskSub: You must specify a subtitle file to use");
+#endif
             }
             if (!args[3].Defined() && !args[6].Defined()) {
+#ifdef _VSMOD
+                env->ThrowError("MaskSubMod: You must specify either FPS or a VFR timecodes file");
+#else
                 env->ThrowError("MaskSub: You must specify either FPS or a VFR timecodes file");
+#endif
             }
             VFRTranslator* vfr = 0;
             if (args[6].Defined()) {
@@ -1041,9 +1080,15 @@ namespace Plugin
         extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit2(IScriptEnvironment* env)
         {
             env->AddFunction("VobSub", "cs", VobSubCreateS, 0);
+#ifdef _VSMOD
+            env->AddFunction("TextSubMod", "c[file]s[charset]i[fps]f[vfr]s", TextSubCreateGeneral, 0);
+            env->AddFunction("TextSubModSwapUV", "b", TextSubSwapUV, 0);
+            env->AddFunction("MaskSubMod", "[file]s[width]i[height]i[fps]f[length]i[charset]i[vfr]s", MaskSubCreate, 0);
+#else
             env->AddFunction("TextSub", "c[file]s[charset]i[fps]f[vfr]s", TextSubCreateGeneral, 0);
             env->AddFunction("TextSubSwapUV", "b", TextSubSwapUV, 0);
             env->AddFunction("MaskSub", "[file]s[width]i[height]i[fps]f[length]i[charset]i[vfr]s", MaskSubCreate, 0);
+#endif
             env->SetVar(env->SaveString("RGBA"), false);
             return nullptr;
         }

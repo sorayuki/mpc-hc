@@ -37,6 +37,7 @@ typedef std::shared_ptr<CPolygonPath> CPolygonPathSharedPtr;
 struct SSATag;
 typedef std::shared_ptr<CAtlList<SSATag>> SSATagsList;
 
+#ifndef _VSMOD
 typedef CRenderingCache<CTextDimsKey, CTextDims, CKeyTraits<CTextDimsKey>> CTextDimsCache;
 typedef CRenderingCache<CPolygonPathKey, CPolygonPathSharedPtr, CKeyTraits<CPolygonPathKey>> CPolygonCache;
 typedef CRenderingCache<CStringW, SSATagsList, CStringElementTraits<CStringW>> CSSATagsCache;
@@ -60,6 +61,9 @@ struct RenderingCaches {
         , outlineCache(128)
         , overlayCache(128) {}
 };
+#else
+struct RenderingCaches {};
+#endif
 
 class CMyFont : public CFont
 {
@@ -180,9 +184,15 @@ public:
 
     void Compact();
 
+#ifdef _VSMOD // patch m006. moveable vector clip
+    CRect PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt);
+    CRect PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt);
+    CRect PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt);
+#else
     CRect PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha);
     CRect PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha);
     CRect PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha);
+#endif
 };
 
 enum SSATagCmd {
@@ -241,6 +251,34 @@ enum SSATagCmd {
     SSA_xshad,
     SSA_ybord,
     SSA_yshad,
+#ifdef _VSMOD
+    SSA_1img,
+    SSA_2img,
+    SSA_3img,
+    SSA_4img,
+    SSA_1vc,
+    SSA_2vc,
+    SSA_3vc,
+    SSA_4vc,
+    SSA_1va,
+    SSA_2va,
+    SSA_3va,
+    SSA_4va,
+    SSA_distort,
+    SSA_frs,
+    SSA_fsvp,
+    SSA_jitter,
+    SSA_mover,
+    SSA_moves3,
+    SSA_moves4,
+    SSA_movevc,
+    SSA_rndx,
+    SSA_rndy,
+    SSA_rndz,
+    SSA_rnds,
+    SSA_rnd,
+    SSA_z,
+#endif
     SSA_unknown
 };
 
@@ -273,10 +311,17 @@ enum eftype {
     EF_ORG,         // {\org(x=param[0], y=param[1])}
     EF_FADE,        // {\fade(a1=param[0], a2=param[1], a3=param[2], t1=t[0], t2=t[1], t3=t[2], t4=t[3])} or {\fad(t1=t[1], t2=t[2])
     EF_BANNER,      // Banner;delay=param[0][;lefttoright=param[1];fadeawaywidth=param[2]]
-    EF_SCROLL       // Scroll up/down=param[3];top=param[0];bottom=param[1];delay=param[2][;fadeawayheight=param[4]]
+    EF_SCROLL,       // Scroll up/down=param[3];top=param[0];bottom=param[1];delay=param[2][;fadeawayheight=param[4]]
+#ifdef _VSMOD // patch m006. moveable vector clip
+    EF_VECTCLP
+#endif
 };
 
+#ifdef _VSMOD // patch m006. moveable vector clip
+#define EF_NUMBEROFEFFECTS 6
+#else
 #define EF_NUMBEROFEFFECTS 5
+#endif
 
 class Effect
 {

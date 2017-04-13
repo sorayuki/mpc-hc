@@ -19,6 +19,8 @@
  */
 
 #include "stdafx.h"
+
+#ifndef _VSMOD
 #include "RenderingCache.h"
 #include "RTS.h"
 
@@ -206,3 +208,6 @@ bool COverlayKey::operator==(const COverlayKey& overlayKey) const
            && m_style->fBlur == overlayKey.m_style->fBlur
            && IsNearlyEqual(m_style->fGaussianBlur, overlayKey.m_style->fGaussianBlur, 1e-6);
 }
+
+
+#endif

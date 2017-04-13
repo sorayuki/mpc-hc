@@ -26,6 +26,32 @@
 #include "../SubPic/ISubPic.h"
 #include "Ellipse.h"
 
+#ifdef _VSMOD // patch m004. gradient colors
+#include "STS.h"
+#endif
+
+#ifdef _VSMOD // patch m006. moveable vector clip
+class MOD_MOVEVC
+{
+public:
+    // movevc
+    bool enable;
+    CSize size;
+    CPoint pos;
+
+    //CSize canvas;	// canvas size
+    CSize spd;		// output canvas size
+    CPoint curpos;  // output origin point
+    int hfull;		// full height
+    byte* alphamask;
+
+    MOD_MOVEVC();
+
+    byte GetAlphaValue(int wx, int wy);
+    void clear();
+};
+#endif
+
 #define PT_MOVETONC         0xfe
 #define PT_BSPLINETO        0xfc
 #define PT_BSPLINEPATCHTO   0xfa
@@ -47,7 +73,13 @@ struct RasterizerNfo {
     byte* srcBorder;
     DWORD* dst;
 
+#ifdef _VSMOD
+    int typ;
+    MOD_GRADIENT mod_grad;
+    MOD_MOVEVC mod_vc;
+#else
     byte* am;
+#endif
 
     RasterizerNfo(int w, int h, int xo, int yo, int overlayp, int spdw, int pitch, DWORD color,
                   const DWORD* sw, byte* s, byte* srcBody, byte* srcBorder, DWORD* dst, byte* am)
@@ -64,7 +96,10 @@ struct RasterizerNfo {
         , srcBody(srcBody)
         , srcBorder(srcBorder)
         , dst(dst)
-        , am(am) {
+#ifndef _VSMOD
+        , am(am) 
+#endif
+    {
     }
 };
 
@@ -226,6 +261,25 @@ private:
     void Draw_Alpha_sp_Body_sse2(RasterizerNfo& rnfo);
     void Draw_Alpha_sp_noBody_sse2(RasterizerNfo& rnfo);
 
+#ifdef _VSMOD // patch m004. gradient colors
+    void Draw_Grad_noAlpha_spFF_Body_0(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_spFF_noBody_0(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_sp_Body_0(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_sp_noBody_0(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_spFF_Body_0(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_spFF_noBody_0(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_sp_Body_0(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_sp_noBody_0(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_spFF_Body_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_spFF_noBody_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_sp_Body_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_noAlpha_sp_noBody_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_spFF_Body_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_spFF_noBody_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_sp_Body_sse2(RasterizerNfo& rnfo);
+    void Draw_Grad_Alpha_sp_noBody_sse2(RasterizerNfo& rnfo);
+#endif
+
 public:
     Rasterizer();
     virtual ~Rasterizer();
@@ -239,6 +293,10 @@ public:
     bool Rasterize(int xsub, int ysub, int fBlur, double fGaussianBlur);
     int getOverlayWidth();
 
+#ifdef _VSMOD // patch m004. gradient colors
+    CRect Draw(SubPicDesc& spd, CRect& clipRect, byte* pAlphaMask, int xsub, int ysub, const DWORD* switchpts, bool fBody, bool fBorder, int typ, MOD_GRADIENT& mod_grad, MOD_MOVEVC& mod_vc);
+#else
     CRect Draw(SubPicDesc& spd, CRect& clipRect, byte* pAlphaMask, int xsub, int ysub, const DWORD* switchpts, bool fBody, bool fBorder);
+#endif
     void FillSolidRect(SubPicDesc& spd, int x, int y, int nWidth, int nHeight, DWORD lColor);
 };

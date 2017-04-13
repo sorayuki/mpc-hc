@@ -20,6 +20,8 @@
 
 #pragma once
 
+#ifndef _VSMOD
+
 #include <atlcoll.h>
 
 template<typename K, typename V, class KTraits = CElementTraits<K>, class VTraits = CElementTraits<V>>
@@ -191,3 +193,5 @@ public:
 
     bool operator==(const COverlayKey& overlayKey) const;
 };
+
+#endif

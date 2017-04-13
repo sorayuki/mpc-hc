@@ -50,6 +50,9 @@ CMyFont::CMyFont(const STSStyle& style)
     lf.lfClipPrecision = CLIP_DEFAULT_PRECIS;
     lf.lfQuality = ANTIALIASED_QUALITY;
     lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
+#ifdef _VSMOD // patch m007. symbol rotating
+    lf.lfOrientation = (LONG)style.mod_fontOrient;
+#endif
 
     if (!CreateFontIndirect(&lf)) {
         _tcscpy_s(lf.lfFaceName, _T("Arial"));
@@ -185,8 +188,15 @@ void CWord::Paint(const CPoint& p, const CPoint& org)
     }
 }
 
+#ifdef _VSMOD
+#include <emmintrin.h>
+#endif
+
 void CWord::Transform(CPoint org)
 {
+#ifdef _VSMOD
+    Transform_C(org);
+#else
 #if defined(_M_IX86_FP) && _M_IX86_FP < 2
     if (!m_bUseSSE2) {
         Transform_C(org);
@@ -195,6 +205,7 @@ void CWord::Transform(CPoint org)
     {
         Transform_SSE2(org);
     }
+#endif
 }
 
 bool CWord::CreateOpaqueBox()
@@ -246,13 +257,68 @@ void CWord::Transform_C(const CPoint& org)
     const double cay = cos((M_PI / 180.0) * m_style.fontAngleY);
     const double say = sin((M_PI / 180.0) * m_style.fontAngleY);
 
+#ifdef _VSMOD
+    double xrnd = m_style.mod_rand.X * 100;
+    double yrnd = m_style.mod_rand.Y * 100;
+    double zrnd = m_style.mod_rand.Z * 100;
+
+    srand(m_style.mod_rand.Seed);
+    // patch m008. distort
+    int xsz, ysz;
+    double dst1x, dst1y, dst2x, dst2y, dst3x, dst3y;
+    int minx = INT_MAX, miny = INT_MAX, maxx = -INT_MAX, maxy = -INT_MAX;
+
+    bool is_dist = m_style.mod_distort.enabled;
+    if (is_dist)
+    {
+        for (int i = 0; i < mPathPoints; i++)
+        {
+            if (minx > mpPathPoints[i].x) minx = mpPathPoints[i].x;
+            if (miny > mpPathPoints[i].y) miny = mpPathPoints[i].y;
+            if (maxx < mpPathPoints[i].x) maxx = mpPathPoints[i].x;
+            if (maxy < mpPathPoints[i].y) maxy = mpPathPoints[i].y;
+        }
+
+        xsz = std::max(maxx - minx, 0);
+        ysz = std::max(maxy - miny, 0);
+
+        dst1x = m_style.mod_distort.pointsx[0];
+        dst1y = m_style.mod_distort.pointsy[0];
+        dst2x = m_style.mod_distort.pointsx[1];
+        dst2y = m_style.mod_distort.pointsy[1];
+        dst3x = m_style.mod_distort.pointsx[2];
+        dst3y = m_style.mod_distort.pointsy[2];
+    }
+#endif
+
     double dOrgX = static_cast<double>(org.x), dOrgY = static_cast<double>(org.y);
     for (ptrdiff_t i = 0; i < mPathPoints; i++) {
         double x, y, z, xx, yy, zz;
 
         x = mpPathPoints[i].x;
         y = mpPathPoints[i].y;
+#ifdef _VSMOD
+        // patch m002. Z-coord
+        z = m_style.mod_z;
+
+        double u, v;
+        if ((is_dist) && (xsz) && (ysz))
+        {
+            u = (x - minx) / xsz;
+            v = (y - miny) / ysz;
+
+            x = minx + (0 + (dst1x - 0) * u + (dst3x - 0) * v + (0 + dst2x - dst1x - dst3x) * u * v) * xsz;
+            y = miny + (0 + (dst1y - 0) * u + (dst3y - 0) * v + (0 + dst2y - dst1y - dst3y) * u * v) * ysz;
+            //P = P0 + (P1 - P0)u + (P3 - P0)v + (P0 + P2 - P1 - P3)uv
+        }
+
+        // patch m003. random text points
+        x = xrnd > 0 ? (xrnd - rand() % (int)(xrnd * 2 + 1)) / 100.0 + x : x;
+        y = yrnd > 0 ? (yrnd - rand() % (int)(yrnd * 2 + 1)) / 100.0 + y : y;
+        z = zrnd > 0 ? (zrnd - rand() % (int)(zrnd * 2 + 1)) / 100.0 + z : z;
+#else
         z = 0;
+#endif
 
         const double dPPx = m_style.fontShiftX * y + x;
         y = scaley * (m_style.fontShiftY * x + y) - dOrgY;
@@ -438,6 +504,9 @@ CText::CText(const STSStyle& style, CStringW str, int ktype, int kstart, int ken
         m_descent = font.m_descent;
 
         HFONT hOldFont = SelectFont(g_hDC, font);
+#ifdef _VSMOD // patch m007. symbol rotating
+        double t = (double)m_style.mod_fontOrient * 3.1415926 / 1800;
+#endif
 
         if (m_style.fontSpacing) {
             for (LPCWSTR s = m_str; *s; s++) {
@@ -447,7 +516,11 @@ CText::CText(const STSStyle& style, CStringW str, int ktype, int kstart, int ken
                     ASSERT(0);
                     return;
                 }
+#ifdef _VSMOD // patch m007. symbol rotating
+                m_width += (int)(extent.cx * abs(cos(t)) + extent.cy * abs(sin(t)) + m_style.fontSpacing);
+#else
                 m_width += extent.cx + (int)m_style.fontSpacing;
+#endif
             }
             // m_width -= (int)m_style.fontSpacing; // TODO: subtract only at the end of the line
         } else {
@@ -457,7 +530,11 @@ CText::CText(const STSStyle& style, CStringW str, int ktype, int kstart, int ken
                 ASSERT(0);
                 return;
             }
+#ifdef _VSMOD // patch m007. symbol rotating
+            m_width += (int)(extent.cx * abs(cos(t)) + extent.cy * abs(sin(t)));
+#else
             m_width += extent.cx;
+#endif
         }
 
         SelectFont(g_hDC, hOldFont);
@@ -945,7 +1022,11 @@ void CLine::Compact()
     }
 }
 
+#ifdef _VSMOD // patch m006. moveable vector clip
+CRect CLine::PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt)
+#else
 CRect CLine::PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha)
+#endif
 {
     CRect bbox(0, 0, 0, 0);
 
@@ -959,7 +1040,11 @@ CRect CLine::PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPo
 
         if (w->m_style.shadowDepthX != 0 || w->m_style.shadowDepthY != 0) {
             int x = p.x + (int)(w->m_style.shadowDepthX + 0.5);
+#ifdef _VSMOD // patch m001. Vertical fontspacing
+            int y = p.y - w->m_style.mod_verticalSpace + m_ascent - w->m_ascent + (int)(w->m_style.shadowDepthY + 0.5);
+#else
             int y = p.y + m_ascent - w->m_ascent + (int)(w->m_style.shadowDepthY + 0.5);
+#endif
 
             DWORD a = 0xff - w->m_style.alpha[3];
             if (alpha > 0) {
@@ -969,14 +1054,35 @@ CRect CLine::PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPo
             DWORD sw[6] = {shadow, DWORD_MAX};
             sw[0] = ColorConvTable::ColorCorrection(sw[0]);
 
+#ifdef _VSMOD // patch m011. jitter
+            CPoint mod_jitter = w->m_style.mod_jitter.getOffset(rt);
+            x += mod_jitter.x;
+            y += mod_jitter.y;
+            // patch m010. png background
+            // subpixel positioning
+            w->m_style.mod_grad.subpixx = x & 7;
+            w->m_style.mod_grad.subpixy = y & 7;
+            w->m_style.mod_grad.fadalpha = alpha;
+#endif
+
             w->Paint(CPoint(x, y), org);
 
             if (w->m_style.borderStyle == 0) {
+#ifdef _VSMOD // patch m004. gradient colors
                 bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw,
-                                w->m_ktype > 0 || w->m_style.alpha[0] < 0xff,
-                                (w->m_style.outlineWidthX + w->m_style.outlineWidthY > 0) && !(w->m_ktype == 2 && time < w->m_kstart));
+                    w->m_ktype > 0 || w->m_style.alpha[0] < 0xff,
+                    (w->m_style.outlineWidthX + w->m_style.outlineWidthY > 0) && !(w->m_ktype == 2 && time < w->m_kstart), 3, w->m_style.mod_grad, mod_vc);
+#else
+                bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw,
+                    w->m_ktype > 0 || w->m_style.alpha[0] < 0xff,
+                    (w->m_style.outlineWidthX + w->m_style.outlineWidthY > 0) && !(w->m_ktype == 2 && time < w->m_kstart));
+#endif
             } else if (w->m_style.borderStyle == 1 && w->m_pOpaqueBox) {
+#ifdef _VSMOD // patch m004. gradient colors
+                bbox |= w->m_pOpaqueBox->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false, 3, w->m_style.mod_grad, mod_vc);
+#else
                 bbox |= w->m_pOpaqueBox->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false);
+#endif
             }
         }
 
@@ -986,7 +1092,11 @@ CRect CLine::PaintShadow(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPo
     return bbox;
 }
 
+#ifdef _VSMOD // patch m006. moveable vector clip
+CRect CLine::PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt)
+#else
 CRect CLine::PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha)
+#endif
 {
     CRect bbox(0, 0, 0, 0);
 
@@ -1000,7 +1110,11 @@ CRect CLine::PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CP
 
         if ((w->m_style.outlineWidthX + w->m_style.outlineWidthY > 0 || w->m_style.borderStyle == 1) && !(w->m_ktype == 2 && time < w->m_kstart)) {
             int x = p.x;
+#ifdef _VSMOD // patch m001. Vertical fontspacing
+            int y = p.y - w->m_style.mod_verticalSpace + m_ascent - w->m_ascent;
+#else
             int y = p.y + m_ascent - w->m_ascent;
+#endif
             DWORD aoutline = w->m_style.alpha[2];
             if (alpha > 0) {
                 aoutline += alpha * (0xff - w->m_style.alpha[2]) / 0xff;
@@ -1009,12 +1123,31 @@ CRect CLine::PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CP
             DWORD sw[6] = {outline, DWORD_MAX};
             sw[0] = ColorConvTable::ColorCorrection(sw[0]);
 
+#ifdef _VSMOD // patch m011. jitter
+            CPoint mod_jitter = w->m_style.mod_jitter.getOffset(rt);
+            x += mod_jitter.x;
+            y += mod_jitter.y;
+            // patch m010. png background
+            // subpixel positioning
+            w->m_style.mod_grad.subpixx = x & 7;
+            w->m_style.mod_grad.subpixy = y & 7;
+            w->m_style.mod_grad.fadalpha = alpha;
+#endif
+
             w->Paint(CPoint(x, y), org);
 
             if (w->m_style.borderStyle == 0) {
+#ifdef _VSMOD // patch m004. gradient colors
+                bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw, !w->m_style.alpha[0] && !w->m_style.alpha[1] && !alpha, true, 2, w->m_style.mod_grad, mod_vc);
+#else
                 bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw, !w->m_style.alpha[0] && !w->m_style.alpha[1] && !alpha, true);
+#endif
             } else if (w->m_style.borderStyle == 1 && w->m_pOpaqueBox) {
+#ifdef _VSMOD // patch m004. gradient colors
+                bbox |= w->m_pOpaqueBox->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false, 2, w->m_style.mod_grad, mod_vc);
+#else
                 bbox |= w->m_pOpaqueBox->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false);
+#endif
             }
         }
 
@@ -1024,7 +1157,11 @@ CRect CLine::PaintOutline(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CP
     return bbox;
 }
 
+#ifdef _VSMOD // patch m006. moveable vector clip
+CRect CLine::PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha, MOD_MOVEVC& mod_vc, REFERENCE_TIME rt)
+#else
 CRect CLine::PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoint p, CPoint org, int time, int alpha)
+#endif
 {
     CRect bbox(0, 0, 0, 0);
 
@@ -1037,7 +1174,11 @@ CRect CLine::PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoin
         }
 
         int x = p.x;
+#ifdef _VSMOD // patch m001. Vertical fontspacing
+        int y = p.y - w->m_style.mod_verticalSpace + m_ascent - w->m_ascent;
+#else
         int y = p.y + m_ascent - w->m_ascent;
+#endif
         // colors
 
         DWORD aprimary = w->m_style.alpha[0];
@@ -1088,6 +1229,17 @@ CRect CLine::PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoin
             bluradjust += 8;
         }
 
+#ifdef _VSMOD // patch m011. jitter
+        CPoint mod_jitter = w->m_style.mod_jitter.getOffset(rt);
+        x += mod_jitter.x;
+        y += mod_jitter.y;
+        // patch m010. png background
+        // subpixel positioning
+        w->m_style.mod_grad.subpixx = x & 7;
+        w->m_style.mod_grad.subpixy = y & 7;
+        w->m_style.mod_grad.fadalpha = alpha;
+#endif
+
         w->Paint(CPoint(x, y), org);
 
         sw[0] = ColorConvTable::ColorCorrection(sw[0]);
@@ -1096,7 +1248,11 @@ CRect CLine::PaintBody(SubPicDesc& spd, CRect& clipRect, BYTE* pAlphaMask, CPoin
         sw[4] = sw[2];
         sw[5] = 0x00ffffff;
 
+#ifdef _VSMOD // patch m004. gradient colors
+        bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false, 0, w->m_style.mod_grad, mod_vc);
+#else
         bbox |= w->Draw(spd, clipRect, pAlphaMask, x, y, sw, true, false);
+#endif
         p.x += w->m_width;
     }
 
@@ -1558,6 +1714,9 @@ CRenderedTextSubtitle::CRenderedTextSubtitle(CCritSec* pLock)
 
     if (g_hDC_refcnt == 0) {
         g_hDC = CreateCompatibleDC(nullptr);
+#ifdef _VSMOD // patch m007. symbol rotating
+        SetGraphicsMode(g_hDC, GM_ADVANCED); // patch for lfOrientation
+#endif
         SetBkMode(g_hDC, TRANSPARENT);
         SetTextColor(g_hDC, 0xffffff);
         SetMapMode(g_hDC, MM_TEXT);
@@ -1620,6 +1779,34 @@ CRenderedTextSubtitle::CRenderedTextSubtitle(CCritSec* pLock)
         s_SSATagCmds[L"xshad"] = SSA_xshad;
         s_SSATagCmds[L"ybord"] = SSA_ybord;
         s_SSATagCmds[L"yshad"] = SSA_yshad;
+#ifdef _VSMOD
+        s_SSATagCmds[L"1img"] = SSA_1img;
+        s_SSATagCmds[L"2img"] = SSA_2img;
+        s_SSATagCmds[L"3img"] = SSA_3img;
+        s_SSATagCmds[L"4img"] = SSA_4img;
+        s_SSATagCmds[L"1vc"] = SSA_1vc;
+        s_SSATagCmds[L"2vc"] = SSA_2vc;
+        s_SSATagCmds[L"3vc"] = SSA_3vc;
+        s_SSATagCmds[L"4vc"] = SSA_4vc;
+        s_SSATagCmds[L"1va"] = SSA_1va;
+        s_SSATagCmds[L"2va"] = SSA_2va;
+        s_SSATagCmds[L"3va"] = SSA_3va;
+        s_SSATagCmds[L"4va"] = SSA_4va;
+        s_SSATagCmds[L"distort"] = SSA_distort;
+        s_SSATagCmds[L"frs"] = SSA_frs;
+        s_SSATagCmds[L"fsvp"] = SSA_fsvp;
+        s_SSATagCmds[L"jitter"] = SSA_jitter;
+        s_SSATagCmds[L"mover"] = SSA_mover;
+        s_SSATagCmds[L"moves3"] = SSA_moves3;
+        s_SSATagCmds[L"moves4"] = SSA_moves4;
+        s_SSATagCmds[L"movevc"] = SSA_movevc;
+        s_SSATagCmds[L"rndx"] = SSA_rndx;
+        s_SSATagCmds[L"rndy"] = SSA_rndy;
+        s_SSATagCmds[L"rndz"] = SSA_rndz;
+        s_SSATagCmds[L"rnds"] = SSA_rnds;
+        s_SSATagCmds[L"rnd"] = SSA_rnd;
+        s_SSATagCmds[L"z"] = SSA_z;
+#endif
     }
 }
 
@@ -2060,6 +2247,71 @@ bool CRenderedTextSubtitle::ParseSSATag(SSATagsList& tagsList, const CStringW& s
                     tag.paramsReal.Add(wcstod(cmd.Mid(5), nullptr));
                 }
                 break;
+#ifdef _VSMOD
+            // patch m010. png background
+            case SSA_1img:
+            case SSA_2img:
+            case SSA_3img:
+            case SSA_4img:
+                break;
+            // patch m004. gradient colors
+            case SSA_1vc:
+            case SSA_2vc:
+            case SSA_3vc:
+            case SSA_4vc:
+                break;
+            case SSA_1va:
+            case SSA_2va:
+            case SSA_3va:
+            case SSA_4va:
+                break;
+            // patch m008. distort
+            case SSA_distort:
+                break;
+            // patch m007. symbol rotating
+            case SSA_frs:
+                if (cmd.GetLength() > 3) {
+                    tag.params.Add(cmd.Mid(3));
+                }
+                break;
+            // patch m001. Vertical fontspacing
+            case SSA_fsvp:
+                if (cmd.GetLength() > 3) {
+                    tag.params.Add(cmd.Mid(4));
+                }
+                break;
+            // patch m011. jitter
+            case SSA_jitter:
+                break;
+            // patch m005. add some move types
+            case SSA_mover:
+            case SSA_moves3:
+            case SSA_moves4:
+                break;
+            // patch m006. moveable vector clip
+            case SSA_movevc:
+                break;
+            // patch m003. random text points
+            case SSA_rndx:
+            case SSA_rndy:
+            case SSA_rndz:
+            case SSA_rnds:
+                if (cmd.GetLength() > 4) {
+                    tag.params.Add(cmd.Mid(4));
+                }
+                break;
+            case SSA_rnd:
+                if (cmd.GetLength() > 3) {
+                    tag.params.Add(cmd.Mid(3));
+                }
+                break;
+            // patch m002. Z-coord
+            case SSA_z:
+                if (cmd.GetLength() > 1) {
+                    tag.params.Add(cmd.Mid(1));
+                }
+                break;
+#endif
         }
 
         tagsList->AddTail(tag);
@@ -2099,6 +2351,31 @@ bool CRenderedTextSubtitle::CreateSubFromSSATag(CSubtitle* sub, const SSATagsLis
                 } else {
                     style.colors[k] = org.colors[k];
                 }
+
+#ifdef _VSMOD // patch m004. gradient colors
+                style.mod_grad.colors[k] = style.colors[k];
+                if (!fAnimate)
+                {
+                    style.mod_grad.mode[k] = 0;
+                    for (int j = 0; j < 4; j++)
+                    {
+                        style.mod_grad.color[k][j] = !tag.paramsInt.IsEmpty()
+                            ? revcolor(tag.paramsInt[0] & 0xffffff)
+                            : org.mod_grad.color[k][j];
+                    }
+                }
+                else if (style.mod_grad.mode[k] != 0)
+                {
+                    for (int j = 0; j < 4; j++)
+                    {
+                        style.mod_grad.color[k][j] = !tag.paramsInt.IsEmpty()
+                            ? (((int)CalcAnimation(tag.paramsInt[0] & 0xff, style.mod_grad.color[k][j] & 0xff, fAnimate)) & 0xff
+                                | ((int)CalcAnimation(tag.paramsInt[0] & 0xff00, style.mod_grad.color[k][j] & 0xff00, fAnimate)) & 0xff00
+                                | ((int)CalcAnimation(tag.paramsInt[0] & 0xff0000, style.mod_grad.color[k][j] & 0xff0000, fAnimate)) & 0xff0000)
+                            : org.colors[k];
+                    }
+                }
+#endif
             }
             break;
             case SSA_1a:
@@ -2110,8 +2387,164 @@ bool CRenderedTextSubtitle::CreateSubFromSSATag(CSubtitle* sub, const SSATagsLis
                 style.alpha[k] = !tag.paramsInt.IsEmpty()
                                  ? (BYTE)CalcAnimation(tag.paramsInt[0] & 0xff, style.alpha[k], fAnimate)
                                  : org.alpha[k];
+
+#ifdef _VSMOD // patch m004. gradient colors
+                style.mod_grad.alphas[k] = style.alpha[k];
+                style.mod_grad.b_images[k].alpha = 255 - style.alpha[k];
+                if (!fAnimate)
+                {
+                    //style.mod_grad.mode[i] = 0;
+                    for (int j = 0; j < 4; j++)
+                    {
+                        style.mod_grad.alpha[k][j] = !tag.paramsInt.IsEmpty()
+                            ? tag.paramsInt[0]
+                            : org.mod_grad.alpha[k][j];
+                    }
+                }
+                else if (style.mod_grad.mode[k] != 0)
+                {
+                    for (int j = 0; j < 4; j++)
+                    {
+                        style.mod_grad.alpha[k][j] = !tag.paramsInt.IsEmpty()
+                            ? (((int)CalcAnimation(tag.paramsInt[0], style.mod_grad.alpha[k][j], fAnimate)))
+                            : org.alpha[k];
+                    }
+                }
+#endif
             }
             break;
+#ifdef _VSMOD // patch m010. png background
+            case SSA_1img:
+            case SSA_2img:
+            case SSA_3img:
+            case SSA_4img:
+            {
+                int i = tag.cmd - SSA_1img;
+
+                if (tag.params.GetCount() >= 1)// file[,xoffset,yoffset[,angle]]
+                {
+                    if (!fAnimate)
+                    {
+                        CString fpath = !m_resPath.IsEmpty() ? m_resPath : m_path.Left(m_path.ReverseFind('\\') + 1);
+
+                        bool t_init = false;
+                        // buffer
+                        for (ptrdiff_t k = 0, j = mod_images.GetCount(); k < j; k++)
+                        {
+                            MOD_PNGIMAGE t_temp = mod_images[k];
+                            if (t_temp.filename == tag.params[0]) // found buffered image
+                            {
+                                style.mod_grad.b_images[i] = t_temp;
+                                t_init = true;
+                                break;
+                            }
+                            if (t_temp.filename == fpath + tag.params[0]) // found buffered image
+                            {
+                                style.mod_grad.b_images[i] = t_temp;
+                                t_init = true;
+                                break;
+                            }
+                        }
+                        if (t_init)
+                        {
+                            style.mod_grad.mode[i] = 2;
+                        }
+                        else
+                        {
+                            // not found
+                            MOD_PNGIMAGE t_temp;
+                            if (t_temp.initImage(tag.params[0])) // absolute path or default directory
+                            {
+                                style.mod_grad.mode[i] = 2;
+                                style.mod_grad.b_images[i] = t_temp;
+                                mod_images.Add(t_temp);
+                            }
+                            else
+                            {
+                                if (t_temp.initImage(fpath + tag.params[0])) // path + relative path
+                                {
+                                    style.mod_grad.mode[i] = 2;
+                                    style.mod_grad.b_images[i] = t_temp;
+                                    mod_images.Add(t_temp);
+                                }
+                            }
+                        }
+                    }
+                    if (tag.params.GetCount() >= 3)
+                    {
+                        style.mod_grad.b_images[i].xoffset = !tag.params[0].IsEmpty()
+                            ? CalcAnimation(wcstol(tag.params[1], NULL, 10), style.mod_grad.b_images[i].xoffset, fAnimate)
+                            : org.mod_grad.b_images[i].xoffset;
+                        style.mod_grad.b_images[i].yoffset = !tag.params[0].IsEmpty()
+                            ? CalcAnimation(wcstol(tag.params[2], NULL, 10), style.mod_grad.b_images[i].yoffset, fAnimate)
+                            : org.mod_grad.b_images[i].yoffset;
+                    }
+                }
+            }
+            break;
+#endif
+#ifdef _VSMOD // patch m004. gradient colors
+            case SSA_1vc:
+            case SSA_2vc:
+            case SSA_3vc:
+            case SSA_4vc:
+            {
+                int i = tag.cmd - SSA_1vc;
+
+                if (tag.params.GetCount() >= 4)
+                {
+                    DWORD c;
+                    for (int j = 0; j < 4; j++)
+                    {
+                        c = wcstol(tag.params[j].Trim(L"&H"), NULL, 16);
+                        style.mod_grad.color[i][j] = !tag.params[0].IsEmpty()
+                            ? (((int)CalcAnimation((c & 0xff0000) >> 16, style.mod_grad.color[i][j] & 0xff, fAnimate)) & 0xff
+                                | ((int)CalcAnimation(c & 0xff00, style.mod_grad.color[i][j] & 0xff00, fAnimate)) & 0xff00
+                                | ((int)CalcAnimation((c & 0xff) << 16, style.mod_grad.color[i][j] & 0xff0000, fAnimate)) & 0xff0000)
+                            : org.mod_grad.color[i][j];
+                    }
+
+                    //if (!fAnimate)
+                    style.mod_grad.mode[i] = 1;
+
+                    if (i == 0 || i == 1)
+                        style.mod_grad.mode[0] = style.mod_grad.mode[1] = 1;
+                }
+            }
+            break;
+            
+            case SSA_1va:
+            case SSA_2va:
+            case SSA_3va:
+            case SSA_4va:
+            {
+                int i = tag.cmd - SSA_1va;
+
+                if (tag.params.GetCount() >= 4)
+                {
+                    int a;
+                    for (int j = 0; j < 4; j++)
+                    {
+                        a = wcstol(tag.params[j].Trim(L"&H"), NULL, 16);
+                        style.mod_grad.alpha[i][j] = !tag.params[0].IsEmpty()
+                            ? (int)CalcAnimation(a, style.mod_grad.alpha[i][j], fAnimate) : org.mod_grad.alpha[i][j];
+                    }
+                    if (style.mod_grad.mode[i] == 0)
+                    {
+                        for (int j = 0; j < 4; j++)
+                        {
+                            style.mod_grad.color[i][j] = revcolor(style.colors[i]);
+                        }
+                    }
+                    //if (!fAnimate)
+                    style.mod_grad.mode[i] = 1;
+
+                    if (i == 0 || i == 1)
+                        style.mod_grad.mode[0] = style.mod_grad.mode[1] = 1;
+                }
+            }
+            break;
+#endif
             case SSA_alpha:
                 for (ptrdiff_t k = 0; k < 4; k++) {
                     style.alpha[k] = !tag.paramsInt.IsEmpty()
