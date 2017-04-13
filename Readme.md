@@ -1,3 +1,5 @@
+# I try to merge vsfiltermod's patch into this and now given up.
+
 # Media Player Classic - Home Cinema
 
 [![GitHub Tag](https://img.shields.io/github/tag/mpc-hc/mpc-hc.svg?label=version)](https://github.com/mpc-hc/mpc-hc)
