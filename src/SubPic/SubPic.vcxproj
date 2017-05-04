@@ -53,6 +53,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="SubPicAllocatorPresenterImpl.cpp" />
+    <ClCompile Include="SubPicColorConv.cpp" />
     <ClCompile Include="SubPicImpl.cpp" />
     <ClCompile Include="SubPicProviderImpl.cpp" />
     <ClCompile Include="SubPicQueueImpl.cpp" />
@@ -62,6 +63,7 @@
   <ItemGroup>
     <ClInclude Include="CoordGeom.h" />
     <ClInclude Include="DX9SubPic.h" />
+    <ClInclude Include="SubPicColorConv.h" />
     <ClInclude Include="SubPicQueueSettings.h" />
     <ClInclude Include="ISubPic.h" />
     <ClInclude Include="ISubRender.h" />

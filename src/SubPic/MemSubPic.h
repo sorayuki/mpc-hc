@@ -39,6 +39,8 @@ enum {
 
 // CMemSubPic
 class CMemSubPicAllocator;
+class CSubPicColorConv;
+
 class CMemSubPic : public CSubPicImpl
 {
     CComPtr<CMemSubPicAllocator> m_pAllocator;
@@ -46,12 +48,16 @@ class CMemSubPic : public CSubPicImpl
     SubPicDesc m_spd;
     std::unique_ptr<SubPicDesc> m_resizedSpd;
 
+    CSubPicColorConv* m_clrConv;
+
 protected:
     STDMETHODIMP_(void*) GetObject(); // returns SubPicDesc*
 
 public:
     CMemSubPic(const SubPicDesc& spd, CMemSubPicAllocator* pAllocator);
     virtual ~CMemSubPic();
+
+    void SetColorConv(CSubPicColorConv* clrConv);
 
     // ISubPic
     STDMETHODIMP GetDesc(SubPicDesc& spd);
@@ -69,6 +75,7 @@ class CMemSubPicAllocator : public CSubPicAllocatorImpl, public CCritSec
     int m_type;
     CSize m_maxsize;
     CRect m_curvidrect;
+    CSubPicColorConv* m_clrConv;
 
     std::vector<std::pair<size_t, BYTE*>> m_freeMemoryChunks;
 
@@ -77,6 +84,8 @@ class CMemSubPicAllocator : public CSubPicAllocatorImpl, public CCritSec
 public:
     CMemSubPicAllocator(int type, SIZE maxsize);
     virtual ~CMemSubPicAllocator();
+
+    void SetColorConv(CSubPicColorConv* clrConv);
 
     bool AllocSpdBits(SubPicDesc& spd);
     void FreeSpdBits(SubPicDesc& spd);

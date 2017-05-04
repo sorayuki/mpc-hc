@@ -29,12 +29,9 @@
 
 #include "moreuuids.h"
 
-extern int c2y_yb[256];
-extern int c2y_yg[256];
-extern int c2y_yr[256];
-extern void ColorConvInit();
+#include "../../../SubPic/SubPicColorConv.h"
 
-void BltLineRGB32(DWORD* d, BYTE* sub, int w, const GUID& subtype)
+void BltLineRGB32(DWORD* d, BYTE* sub, int w, const GUID& subtype, CSubPicColorConv& cc)
 {
     if (subtype == MEDIASUBTYPE_YV12 || subtype == MEDIASUBTYPE_I420 || subtype == MEDIASUBTYPE_IYUV) {
         BYTE* db = (BYTE*)d;
@@ -42,7 +39,7 @@ void BltLineRGB32(DWORD* d, BYTE* sub, int w, const GUID& subtype)
 
         for (; db < dbtend; sub += 4, db++) {
             if (sub[3] < 0xff) {
-                int y = (c2y_yb[sub[0]] + c2y_yg[sub[1]] + c2y_yr[sub[2]] + 0x108000) >> 16;
+                int y = cc.RGB2Y(sub[2], sub[1], sub[0]);
                 *db = BYTE(y); // w/o colors
             }
         }
@@ -52,7 +49,7 @@ void BltLineRGB32(DWORD* d, BYTE* sub, int w, const GUID& subtype)
 
         for (; ds < dstend; sub += 4, ds++) {
             if (sub[3] < 0xff) {
-                int y = (c2y_yb[sub[0]] + c2y_yg[sub[1]] + c2y_yr[sub[2]] + 0x108000) >> 16;
+                int y = cc.RGB2Y(sub[2], sub[1], sub[0]);
                 *ds = WORD(0x8000 | y); // w/o colors
             }
         }
@@ -164,8 +161,6 @@ void CDirectVobSubFilter::PrintMessages(BYTE* pOut)
         return;
     }
 
-    ColorConvInit();
-
     const GUID& subtype = m_pOutput->CurrentMediaType().subtype;
 
     BITMAPINFOHEADER bihOut;
@@ -240,8 +235,10 @@ void CDirectVobSubFilter::PrintMessages(BYTE* pOut)
     pIn += pitchIn * r.top;
     pOut += pitchOut * r.top;
 
+    CSubPicColorConv& cc = *CSubPicColorConv::GetByRes(bm.bmWidth, bm.bmHeight);
+
     for (int w = std::min<int>(r.right, m_w), h = r.Height(); h--; pIn += pitchIn, pOut += pitchOut) {
-        BltLineRGB32((DWORD*)pOut, pIn, w, subtype);
+        BltLineRGB32((DWORD*)pOut, pIn, w, subtype, cc);
         memsetd(pIn, 0xff000000, r.right * 4);
     }
 

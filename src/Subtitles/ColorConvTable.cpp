@@ -288,10 +288,14 @@ void ConvMatrix::InitColorCorrectionMatrix()
     }
 
     out_matrix = &m_matrix_vsfilter_compact_corretion[LEVEL_TV][0][0];
-    memcpy(p_matrix, MATRIX_QUAN[LEVEL_TV][COLOR_RGB], 3 * 4 * sizeof(float));
-    MultiplyMatrix(p_matrix, MATRIX_INV_TRANS[COLOR_YUV_709]);
-    MultiplyMatrix(p_matrix, MATRIX_TRANS[COLOR_YUV_601]);
-    MultiplyMatrix(p_matrix, MATRIX_DE_QUAN[LEVEL_PC][COLOR_RGB]);
+
+    memcpy(p_matrix, MATRIX_INV_TRANS[COLOR_YUV_601], 3 * 4 * sizeof(float));
+    MultiplyMatrix(p_matrix, MATRIX_TRANS[COLOR_YUV_709]);
+
+    //memcpy(p_matrix, MATRIX_QUAN[LEVEL_TV][COLOR_RGB], 3 * 4 * sizeof(float));
+    //MultiplyMatrix(p_matrix, MATRIX_INV_TRANS[COLOR_YUV_709]);
+    //MultiplyMatrix(p_matrix, MATRIX_TRANS[COLOR_YUV_601]);
+    //MultiplyMatrix(p_matrix, MATRIX_DE_QUAN[LEVEL_PC][COLOR_RGB]);
     for (int i = 0; i < 3 * 4; i++) {
         out_matrix[i] = std::lround(p_matrix[i] * (1 << 16));
         ASSERT(out_matrix[i] < (1 << 24));

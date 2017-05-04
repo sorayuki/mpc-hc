@@ -27,6 +27,7 @@
 #include "../../../Subtitles/RTS.h"
 #include "../../../SubPic/MemSubPic.h"
 #include "../../../SubPic/SubPicQueueImpl.h"
+#include "../../../SubPic/SubPicColorConv.h"
 #include "vfr.h"
 
 #ifndef _WIN64
@@ -58,10 +59,14 @@ namespace Plugin
         CComPtr<ISubPicProvider> m_pSubPicProvider;
         DWORD_PTR m_SubPicProviderId;
 
+        CSubPicColorConv* m_clrConv;
+
     public:
         CFilter()
             : m_fps(-1)
-            , m_SubPicProviderId(0) {
+            , m_SubPicProviderId(0)
+            , m_clrConv(0)
+        {
             CAMThread::Create();
         }
         virtual ~CFilter() {
@@ -85,14 +90,17 @@ namespace Plugin
             CSize size(dst.w, dst.h);
 
             if (!m_pSubPicQueue) {
-                CComPtr<ISubPicAllocator> pAllocator = DEBUG_NEW CMemSubPicAllocator(dst.type, size);
+                CComPtr<CMemSubPicAllocator> pAllocator = DEBUG_NEW CMemSubPicAllocator(dst.type, size);
+                pAllocator->SetColorConv(m_clrConv);
                 pAllocator->SetCurVidRect(CRect(CPoint(), size));
                 
                 HRESULT hr = E_FAIL;
-                if (!(m_pSubPicQueue = DEBUG_NEW CSubPicQueueNoThread(SubPicQueueSettings(0, 0, false, 50, 100, false), pAllocator, &hr)) || FAILED(hr)) {
+                CSubPicQueueNoThread* subPicQueueNoThread = DEBUG_NEW CSubPicQueueNoThread(SubPicQueueSettings(0, 0, false, 50, 100, false), pAllocator, &hr);
+                if (!(m_pSubPicQueue = subPicQueueNoThread) || FAILED(hr)) {
                     m_pSubPicQueue = nullptr;
                     return false;
                 }
+
                 subPicQueueNoThread->SetFPS(fps);
             }
 
@@ -208,6 +216,33 @@ namespace Plugin
     {
         int m_CharSet;
 
+        void LoadMatrixString(CString str)
+        {
+            if (str.IsEmpty())
+                return;
+
+            CSubPicColorConv::Level level;
+            CSubPicColorConv::ColorMatrix clrMat;
+
+            str.MakeLower();
+
+            if (str.Find(TEXT("tv.")) >= 0)
+                level = CSubPicColorConv::LEVEL_TV;
+            else if (str.Find(TEXT("pc.")) >= 0)
+                level = CSubPicColorConv::LEVEL_PC;
+            else
+                return;
+
+            if (str.Find(TEXT(".601")) >= 0)
+                clrMat = CSubPicColorConv::CM_BT601;
+            else if (str.Find(TEXT(".709")) >= 0)
+                clrMat = CSubPicColorConv::CM_BT709;
+            else
+                return;
+
+            m_clrConv = CSubPicColorConv::Get(level, clrMat);
+        }
+
     public:
         CTextSubFilter(CString fn = _T(""), int CharSet = DEFAULT_CHARSET, float fps = -1)
             : m_CharSet(CharSet) {
@@ -230,6 +265,7 @@ namespace Plugin
                     m_pSubPicProvider = (ISubPicProvider*)rts;
                     if (rts->Open(CString(fn), CharSet)) {
                         SetFileName(fn);
+                        LoadMatrixString(rts->m_sYCbCrMatrix);
                     } else {
                         m_pSubPicProvider = nullptr;
                     }
@@ -786,7 +822,7 @@ namespace Plugin
         class CAvisynthFilter : public GenericVideoFilter, virtual public CFilter
         {
         public:
-            CAvisynthFilter(PClip c, IScriptEnvironment* env) : GenericVideoFilter(c) {}
+            CAvisynthFilter(PClip c, IScriptEnvironment* env) : GenericVideoFilter(c) { }
 
             PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) {
                 PVideoFrame frame = child->GetFrame(n, env);
@@ -838,6 +874,11 @@ namespace Plugin
                 , CAvisynthFilter(c, env) {
                 if (!m_pSubPicProvider) {
                     env->ThrowError("TextSub: Can't open \"%s\"", fn);
+                }
+
+                if (vi.IsYUV() && m_clrConv == nullptr)
+                {
+                    m_clrConv = CSubPicColorConv::GetByRes(vi.width, vi.height);
                 }
             }
         };

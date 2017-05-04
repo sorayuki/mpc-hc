@@ -22,63 +22,13 @@
 #include "stdafx.h"
 #include "MemSubPic.h"
 
+#include <assert.h>
+
 // For CPUID usage
 #include "../DSUtil/vd.h"
 #include <emmintrin.h>
 
-// color conv
-
-static unsigned char clipBase[256 * 3];
-static unsigned char* clip = clipBase + 256;
-
-static const int c2y_cyb = std::lround(0.114 * 219 / 255 * 65536);
-static const int c2y_cyg = std::lround(0.587 * 219 / 255 * 65536);
-static const int c2y_cyr = std::lround(0.299 * 219 / 255 * 65536);
-static const int c2y_cu = std::lround(1.0 / 2.018 * 1024);
-static const int c2y_cv = std::lround(1.0 / 1.596 * 1024);
-
-int c2y_yb[256];
-int c2y_yg[256];
-int c2y_yr[256];
-
-static const int y2c_cbu = std::lround(2.018 * 65536);
-static const int y2c_cgu = std::lround(0.391 * 65536);
-static const int y2c_cgv = std::lround(0.813 * 65536);
-static const int y2c_crv = std::lround(1.596 * 65536);
-static int y2c_bu[256];
-static int y2c_gu[256];
-static int y2c_gv[256];
-static int y2c_rv[256];
-
-static const int cy_cy = std::lround(255.0 / 219.0 * 65536);
-static const int cy_cy2 = std::lround(255.0 / 219.0 * 32768);
-
-void ColorConvInit()
-{
-    static bool bColorConvInitOK = false;
-    if (bColorConvInitOK) {
-        return;
-    }
-
-    for (int i = 0; i < 256; i++) {
-        clipBase[i] = 0;
-        clipBase[i + 256] = BYTE(i);
-        clipBase[i + 512] = 255;
-    }
-
-    for (int i = 0; i < 256; i++) {
-        c2y_yb[i] = c2y_cyb * i;
-        c2y_yg[i] = c2y_cyg * i;
-        c2y_yr[i] = c2y_cyr * i;
-
-        y2c_bu[i] = y2c_cbu * (i - 128);
-        y2c_gu[i] = y2c_cgu * (i - 128);
-        y2c_gv[i] = y2c_cgv * (i - 128);
-        y2c_rv[i] = y2c_crv * (i - 128);
-    }
-
-    bColorConvInitOK = true;
-}
+#include "SubPicColorConv.h"
 
 //
 // CMemSubPic
@@ -87,6 +37,7 @@ void ColorConvInit()
 CMemSubPic::CMemSubPic(const SubPicDesc& spd, CMemSubPicAllocator* pAllocator)
     : m_pAllocator(pAllocator)
     , m_spd(spd)
+    , m_clrConv(nullptr)
 {
     m_maxsize.SetSize(spd.w, spd.h);
     m_rcDirty.SetRect(0, 0, spd.w, spd.h);
@@ -98,6 +49,11 @@ CMemSubPic::~CMemSubPic()
     if (m_resizedSpd) {
         m_pAllocator->FreeSpdBits(*m_resizedSpd);
     }
+}
+
+void CMemSubPic::SetColorConv(CSubPicColorConv* clrConv)
+{
+    m_clrConv = clrConv;
 }
 
 // ISubPic
@@ -148,6 +104,7 @@ STDMETHODIMP CMemSubPic::CopyTo(ISubPic* pSubPic)
     for (ptrdiff_t j = 0; j < h; j++, s += src.pitch, d += dst.pitch) {
         memcpy(d, s, w * 4);
     }
+
 
     return S_OK;
 }
@@ -224,7 +181,11 @@ STDMETHODIMP CMemSubPic::Unlock(RECT* pDirtyRect)
     const SubPicDesc& subPic = m_resizedSpd ? *m_resizedSpd : m_spd;
 
     if (subPic.type == MSP_YUY2 || subPic.type == MSP_YV12 || subPic.type == MSP_IYUV || subPic.type == MSP_AYUV) {
-        ColorConvInit();
+
+        if (m_clrConv == 0)
+        {
+            m_clrConv = CSubPicColorConv::GetByRes(subPic.w, subPic.h);
+        }
 
         if (subPic.type == MSP_YUY2 || subPic.type == MSP_YV12 || subPic.type == MSP_IYUV) {
             rcDirty.left &= ~1;
@@ -264,18 +225,19 @@ STDMETHODIMP CMemSubPic::Unlock(RECT* pDirtyRect)
             }
         }
     } else if (subPic.type == MSP_YUY2 || subPic.type == MSP_YV12 || subPic.type == MSP_IYUV) {
+        CSubPicColorConv& cc = *m_clrConv;
+
         for (; top < bottom ; top += subPic.pitch) {
             BYTE* s = top;
             BYTE* e = s + w * 4;
             for (; s < e; s += 8) { // ARGB ARGB -> AxYU AxYV
                 if ((s[3] + s[7]) < 0x1fe) {
-                    s[1] = BYTE((c2y_yb[s[0]] + c2y_yg[s[1]] + c2y_yr[s[2]] + 0x108000) >> 16);
-                    s[5] = BYTE((c2y_yb[s[4]] + c2y_yg[s[5]] + c2y_yr[s[6]] + 0x108000) >> 16);
+                    s[1] = cc.RGB2Y(s[2], s[1], s[0]);
+                    s[5] = cc.RGB2Y(s[6], s[5], s[4]);
 
-                    int scaled_y = (s[1] + s[5] - 32) * cy_cy2;
-
-                    s[0] = clip[(((((s[0] + s[4]) << 15) - scaled_y) >> 10) * c2y_cu + 0x800000 + 0x8000) >> 16];
-                    s[4] = clip[(((((s[2] + s[6]) << 15) - scaled_y) >> 10) * c2y_cv + 0x800000 + 0x8000) >> 16];
+                    int scaled_y = cc.ScaleY((s[1] + s[5]) >> 1);
+                    s[0] = cc.YB2U(scaled_y, (s[0] + s[4]) >> 1);
+                    s[4] = cc.YR2V(scaled_y, (s[2] + s[6]) >> 1);
                 } else {
                     s[1] = s[5] = 0x10;
                     s[0] = s[4] = 0x80;
@@ -283,16 +245,17 @@ STDMETHODIMP CMemSubPic::Unlock(RECT* pDirtyRect)
             }
         }
     } else if (subPic.type == MSP_AYUV) {
+        CSubPicColorConv& cc = *m_clrConv;
         for (; top < bottom ; top += subPic.pitch) {
             BYTE* s = top;
             BYTE* e = s + w * 4;
 
             for (; s < e; s += 4) { // ARGB -> AYUV
                 if (s[3] < 0xff) {
-                    auto y = BYTE((c2y_yb[s[0]] + c2y_yg[s[1]] + c2y_yr[s[2]] + 0x108000) >> 16);
-                    int scaled_y = (y - 32) * cy_cy;
-                    s[1] = clip[((((s[0] << 16) - scaled_y) >> 10) * c2y_cu + 0x800000 + 0x8000) >> 16];
-                    s[0] = clip[((((s[2] << 16) - scaled_y) >> 10) * c2y_cv + 0x800000 + 0x8000) >> 16];
+                    auto y = cc.RGB2Y(s[2], s[1], s[0]);
+                    int scaled_y = cc.ScaleY(y);
+                    s[1] = cc.clip[((((s[0] << 16) - scaled_y) >> 10) * cc.c2y_cu + 0x800000 + 0x8000) >> 16];
+                    s[0] = cc.clip[((((s[2] << 16) - scaled_y) >> 10) * cc.c2y_cv + 0x800000 + 0x8000) >> 16];
                     s[2] = y;
                 } else {
                     s[0] = s[1] = 0x80;
@@ -633,6 +596,7 @@ CMemSubPicAllocator::CMemSubPicAllocator(int type, SIZE maxsize)
     : CSubPicAllocatorImpl(maxsize, false)
     , m_type(type)
     , m_maxsize(maxsize)
+    , m_clrConv(nullptr)
 {
 }
 
@@ -666,7 +630,11 @@ bool CMemSubPicAllocator::Alloc(bool fStatic, ISubPic** ppSubPic)
     }
 
     try {
-        *ppSubPic = DEBUG_NEW CMemSubPic(spd, this);
+        CMemSubPic* r = DEBUG_NEW CMemSubPic(spd, this);
+        if (m_clrConv)
+            r->SetColorConv(m_clrConv);
+
+        *ppSubPic = r;
     } catch (CMemoryException* e) {
         e->Delete();
         delete [] spd.bits;
@@ -676,6 +644,11 @@ bool CMemSubPicAllocator::Alloc(bool fStatic, ISubPic** ppSubPic)
     (*ppSubPic)->AddRef();
 
     return true;
+}
+
+void CMemSubPicAllocator::SetColorConv(CSubPicColorConv* clrConv)
+{
+    m_clrConv = clrConv;
 }
 
 bool CMemSubPicAllocator::AllocSpdBits(SubPicDesc& spd)
