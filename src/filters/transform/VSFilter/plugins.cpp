@@ -93,6 +93,7 @@ namespace Plugin
                     m_pSubPicQueue = nullptr;
                     return false;
                 }
+                subPicQueueNoThread->SetFPS(fps);
             }
 
             if (m_SubPicProviderId != (DWORD_PTR)(ISubPicProvider*)m_pSubPicProvider) {
